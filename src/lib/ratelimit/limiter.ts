@@ -82,7 +82,7 @@ export function validateRepositoryPostingPolicy(
   }
 
   const demoOwner = (process.env.GITHUB_DEMO_REPO_OWNER || "napraveen").toLowerCase();
-  const demoRepo = (process.env.GITHUB_DEMO_REPO_NAME || "wispr-flow-demo").toLowerCase();
+  const demoRepo = (process.env.GITHUB_DEMO_REPO_NAME || "vox-pr-demo-sandbox").toLowerCase();
 
   const isDemo =
     owner.toLowerCase() === demoOwner &&

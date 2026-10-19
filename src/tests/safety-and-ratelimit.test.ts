@@ -31,7 +31,7 @@ describe("Phase 5: Access Control, Rate Limiting & Safety Policies", () => {
     it("allows anonymous visitors to post to the configured demo repository", () => {
       const decision = validateRepositoryPostingPolicy(
         "napraveen",
-        "wispr-flow-demo",
+        "vox-pr-demo-sandbox",
         undefined // anonymous
       );
       expect(decision.allowed).toBe(true);

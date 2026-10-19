@@ -46,8 +46,8 @@ function categorizeError(message: string): ErrorStateCode {
 }
 
 export default function Home() {
-  // Default to a real active PR on a major open-source repository
-  const [prUrl, setPrUrl] = useState("https://github.com/facebook/react/pull/37895");
+  // Default to our public demo repository sandbox PR
+  const [prUrl, setPrUrl] = useState("https://github.com/napraveen/vox-pr-demo-sandbox/pull/1");
   const [loadingPr, setLoadingPr] = useState(false);
   const [prDetails, setPrDetails] = useState<PullRequestDetails | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -58,7 +58,7 @@ export default function Home() {
 
   // Dictation stream state
   const [transcript, setTranscript] = useState(
-    "In compiler/crates/react_compiler_hir/src/globals.rs around line 40, this logic adds ref access to ResizeObserver callbacks. Make sure we also handle MutationObserver callbacks properly here."
+    "In src/auth.ts around line 28, you added token expiration checking. Make sure to check if payload.iat is in seconds or milliseconds so we don't prematurely expire sessions. Also in src/helpers.ts inside maskToken, what happens if the token string has fewer than 8 characters?"
   );
   const [selectedAnchor, setSelectedAnchor] = useState<{ file: string; line: number } | null>(null);
 
@@ -248,6 +248,25 @@ export default function Home() {
             isLoading={loadingPr}
             onLoadPR={handleLoadPR}
           />
+        </div>
+
+        {/* Quick PR Links */}
+        <div className="hidden xl:flex items-center gap-2 text-xs">
+          <span className="text-[#8b949e]">PRs:</span>
+          <button
+            type="button"
+            onClick={() => handleLoadPR("https://github.com/napraveen/vox-pr-demo-sandbox/pull/1")}
+            className="px-2.5 py-1 rounded bg-blue-600/20 text-blue-300 border border-blue-500/40 hover:bg-blue-600/30 transition-colors"
+          >
+            sandbox#1
+          </button>
+          <button
+            type="button"
+            onClick={() => handleLoadPR("https://github.com/facebook/react/pull/37895")}
+            className="px-2.5 py-1 rounded bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] border border-[#30363d] transition-colors"
+          >
+            react#37895
+          </button>
         </div>
 
         {/* Action Controls & Token Connect */}
