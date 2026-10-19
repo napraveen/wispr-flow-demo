@@ -33,7 +33,13 @@ export function parseUnifiedDiff(rawDiff: string): ParsedFileDiff[] {
         status = "added";
       } else if (line.startsWith("deleted file mode")) {
         status = "deleted";
-      } else if (line.startsWith("similarity index") || line.startsWith("rename from")) {
+      } else if (line.startsWith("rename from ")) {
+        status = "renamed";
+        oldPath = line.substring(12).trim();
+      } else if (line.startsWith("rename to ")) {
+        status = "renamed";
+        newPath = line.substring(10).trim();
+      } else if (line.startsWith("similarity index")) {
         status = "renamed";
       } else if (line.includes("Binary files") && line.includes("differ")) {
         status = "binary";
