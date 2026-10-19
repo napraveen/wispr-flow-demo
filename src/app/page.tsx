@@ -4,7 +4,9 @@ import React, { useState, useEffect } from "react";
 import { PRInputBar } from "@/components/pr-input-bar";
 import { SplitDiffViewer } from "@/components/diff-viewer/split-diff";
 import { DictationPanel } from "@/components/dictation-panel";
+import { ReviewSummary } from "@/components/review/review-summary";
 import { PullRequestDetails } from "@/lib/types/diff";
+import { GroundedReviewComment } from "@/lib/types/review";
 import {
   GitPullRequest,
   ExternalLink,
@@ -12,7 +14,8 @@ import {
   FileDiff,
   Mic,
   MessageSquare,
-  CheckCircle2
+  Sparkles,
+  Loader2
 } from "lucide-react";
 
 export default function Home() {
@@ -23,8 +26,18 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Dictation stream state
-  const [transcript, setTranscript] = useState("");
+  const [transcript, setTranscript] = useState(
+    "In compiler/crates/react_compiler_hir/src/globals.rs around line 40, this logic adds ref access to ResizeObserver callbacks. Make sure we also handle MutationObserver callbacks properly here."
+  );
   const [selectedAnchor, setSelectedAnchor] = useState<{ file: string; line: number } | null>(null);
+
+  // Structured Review state
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [reviewSummary, setReviewSummary] = useState("");
+  const [reviewEvent, setReviewEvent] = useState<"APPROVE" | "REQUEST_CHANGES" | "COMMENT">("COMMENT");
+  const [comments, setComments] = useState<GroundedReviewComment[]>([]);
+  const [modelUsed, setModelUsed] = useState<string | undefined>(undefined);
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   // Fetch PR data
   const handleLoadPR = async (url: string) => {
@@ -44,6 +57,52 @@ export default function Home() {
     } finally {
       setLoadingPr(false);
     }
+  };
+
+  // Generate Structured Review via LLM
+  const handleGenerateReview = async () => {
+    if (!prDetails || !transcript.trim()) return;
+
+    setIsGenerating(true);
+    setReviewError(null);
+
+    try {
+      const res = await fetch("/api/review/structure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transcript,
+          files: prDetails.files
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to synthesize structured review.");
+      }
+
+      setReviewSummary(data.rawResponse.summary);
+      setReviewEvent(data.rawResponse.recommendedEvent);
+      setComments(data.groundedComments);
+      setModelUsed(data.modelUsed);
+    } catch (err: any) {
+      console.error("Review generation error:", err);
+      setReviewError(err.message || "An error occurred while generating the review.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleUpdateComment = (updated: GroundedReviewComment) => {
+    setComments((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+  };
+
+  const handleDeleteComment = (id: string) => {
+    setComments((prev) => prev.filter((c) => c.id !== id));
+  };
+
+  const handleSubmitReview = async () => {
+    alert("Review submission to GitHub will be executed in Phase 4 after review verification.");
   };
 
   // Initial load
@@ -86,12 +145,12 @@ export default function Home() {
 
         {/* PR Quick Links */}
         <div className="hidden lg:flex items-center gap-2 text-xs">
-          <span className="text-[#8b949e]">Examples:</span>
+          <span className="text-[#8b949e]">Verified PRs:</span>
           <button
-            onClick={() => handleLoadPR("https://github.com/facebook/react/pull/31600")}
+            onClick={() => handleLoadPR("https://github.com/facebook/react/pull/37895")}
             className="px-2 py-1 rounded bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] border border-[#30363d] transition-colors"
           >
-            react#31600
+            react#37895
           </button>
           <button
             onClick={() => handleLoadPR("https://github.com/vercel/next.js/pull/70800")}
@@ -178,33 +237,57 @@ export default function Home() {
             <DictationPanel
               transcript={transcript}
               onTranscriptChange={setTranscript}
-              onGenerateReview={() => {
-                alert("Review generation will be activated in Phase 3 after diff grounding tests.");
-              }}
-              isGenerating={false}
+              onGenerateReview={handleGenerateReview}
+              isGenerating={isGenerating}
               disabled={!prDetails}
             />
           </div>
 
           {/* Comments & Degradation Ladder Area */}
-          <div className="h-1/2 p-4 pt-2 flex flex-col">
-            <div className="flex-1 bg-[#161b22] border border-[#30363d] rounded-xl flex flex-col overflow-hidden">
-              <div className="px-4 py-3 bg-[#0d1117] border-b border-[#30363d] flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <MessageSquare className="w-4 h-4 text-blue-400" />
-                  <h3 className="text-sm font-semibold text-[#f0f6fc]">Review Comments</h3>
+          <div className="h-1/2 p-4 pt-2 flex flex-col overflow-hidden">
+            {reviewError ? (
+              <div className="flex-1 bg-[#161b22] border border-red-500/40 rounded-xl p-4 flex flex-col items-center justify-center text-center text-red-300">
+                <AlertCircle className="w-8 h-8 text-red-400 mb-2" />
+                <h4 className="font-semibold text-sm">Synthesis Error</h4>
+                <p className="text-xs mt-1 text-red-200 max-w-sm">{reviewError}</p>
+              </div>
+            ) : comments.length > 0 || reviewSummary ? (
+              <div className="flex-1 border border-[#30363d] rounded-xl overflow-hidden flex flex-col">
+                <ReviewSummary
+                  summary={reviewSummary}
+                  onSummaryChange={setReviewSummary}
+                  event={reviewEvent}
+                  onEventChange={setReviewEvent}
+                  comments={comments}
+                  onUpdateComment={handleUpdateComment}
+                  onDeleteComment={handleDeleteComment}
+                  onSubmitReview={handleSubmitReview}
+                  isSubmitting={false}
+                  onSelectAnchor={(file, line) => {
+                    setSelectedAnchor({ file, line });
+                  }}
+                  modelUsed={modelUsed}
+                />
+              </div>
+            ) : (
+              <div className="flex-1 bg-[#161b22] border border-[#30363d] rounded-xl flex flex-col overflow-hidden">
+                <div className="px-4 py-3 bg-[#0d1117] border-b border-[#30363d] flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-blue-400" />
+                    <h3 className="text-sm font-semibold text-[#f0f6fc]">Review Comments</h3>
+                  </div>
+                  <span className="text-xs text-[#8b949e]">Grounding Ready</span>
                 </div>
-                <span className="text-xs text-[#8b949e]">Phase 1 Ready</span>
-              </div>
 
-              <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-[#8b949e]">
-                <CheckCircle2 className="w-8 h-8 text-emerald-500 mb-2" />
-                <p className="text-sm font-medium text-[#c9d1d9]">Diff Loaded & Parsed</p>
-                <p className="text-xs mt-1 text-[#8b949e] max-w-xs">
-                  {totalCommentableLines} legal comment anchors computed from real diff hunks.
-                </p>
+                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-[#8b949e]">
+                  <Sparkles className="w-8 h-8 text-blue-400 mb-2" />
+                  <p className="text-sm font-medium text-[#c9d1d9]">Ready to Synthesize Review</p>
+                  <p className="text-xs mt-1 text-[#8b949e] max-w-xs">
+                    Dictate your thoughts above and click &quot;Synthesize Review&quot;. The model will ground comments to real diff lines.
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </main>
