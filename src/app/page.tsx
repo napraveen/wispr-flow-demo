@@ -5,6 +5,8 @@ import { PRInputBar } from "@/components/pr-input-bar";
 import { SplitDiffViewer } from "@/components/diff-viewer/split-diff";
 import { DictationPanel } from "@/components/dictation-panel";
 import { ReviewSummary } from "@/components/review/review-summary";
+import { ErrorBoundaryView, ErrorStateCode } from "@/components/error-boundary-view";
+import { TokenModal } from "@/components/token-modal";
 import { PullRequestDetails } from "@/lib/types/diff";
 import { GroundedReviewComment } from "@/lib/types/review";
 import {
@@ -16,8 +18,32 @@ import {
   MessageSquare,
   Sparkles,
   Loader2,
-  CheckCircle2
+  CheckCircle2,
+  KeyRound
 } from "lucide-react";
+
+function categorizeError(message: string): ErrorStateCode {
+  const lower = message.toLowerCase();
+  if (lower.includes("invalid github pull request url") || lower.includes("expected format")) {
+    return "INVALID_PR_URL";
+  }
+  if (lower.includes("not found") || lower.includes("private") || lower.includes("404")) {
+    return "NOT_FOUND_OR_PRIVATE";
+  }
+  if (lower.includes("rate limit") || lower.includes("429")) {
+    return "RATE_LIMITED";
+  }
+  if (lower.includes("demo repository") || lower.includes("unauthorized repo")) {
+    return "POSTING_UNAUTHORIZED_REPO";
+  }
+  if (lower.includes("gemini") || lower.includes("model") || lower.includes("synthesis")) {
+    return "MODEL_FAILURE";
+  }
+  if (lower.includes("422") || lower.includes("rejected") || lower.includes("unprocessable")) {
+    return "GITHUB_API_REJECTION";
+  }
+  return "UNKNOWN_ERROR";
+}
 
 export default function Home() {
   // Default to a real active PR on a major open-source repository
@@ -25,6 +51,10 @@ export default function Home() {
   const [loadingPr, setLoadingPr] = useState(false);
   const [prDetails, setPrDetails] = useState<PullRequestDetails | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // GitHub User Token State
+  const [githubToken, setGithubToken] = useState("");
+  const [isTokenModalOpen, setIsTokenModalOpen] = useState(false);
 
   // Dictation stream state
   const [transcript, setTranscript] = useState(
@@ -40,12 +70,47 @@ export default function Home() {
   const [modelUsed, setModelUsed] = useState<string | undefined>(undefined);
   const [reviewError, setReviewError] = useState<string | null>(null);
 
+  // Submission state
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionSuccess, setSubmissionSuccess] = useState<{
+    reviewId: number;
+    htmlUrl: string;
+    selfApprovalDegraded: boolean;
+    degradeNotice?: string;
+  } | null>(null);
+
+  // Load token from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("vox_pr_github_token");
+      if (saved) setGithubToken(saved);
+    } catch (e) {
+      // SSR or restricted storage
+    }
+  }, []);
+
+  const handleSaveToken = (newToken: string) => {
+    setGithubToken(newToken);
+    try {
+      if (newToken) {
+        localStorage.setItem("vox_pr_github_token", newToken);
+      } else {
+        localStorage.removeItem("vox_pr_github_token");
+      }
+    } catch (e) {}
+  };
+
   // Fetch PR data
   const handleLoadPR = async (url: string) => {
     setLoadingPr(true);
     setErrorMessage(null);
     try {
-      const res = await fetch(`/api/pr?url=${encodeURIComponent(url)}`);
+      const headers: Record<string, string> = {};
+      if (githubToken) {
+        headers["Authorization"] = `Bearer ${githubToken}`;
+      }
+
+      const res = await fetch(`/api/pr?url=${encodeURIComponent(url)}`, { headers });
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || "Failed to fetch pull request.");
@@ -102,15 +167,6 @@ export default function Home() {
     setComments((prev) => prev.filter((c) => c.id !== id));
   };
 
-  // Submission state
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submissionSuccess, setSubmissionSuccess] = useState<{
-    reviewId: number;
-    htmlUrl: string;
-    selfApprovalDegraded: boolean;
-    degradeNotice?: string;
-  } | null>(null);
-
   const handleSubmitReview = async () => {
     if (!prDetails) return;
 
@@ -118,9 +174,14 @@ export default function Home() {
     setReviewError(null);
 
     try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (githubToken) {
+        headers["Authorization"] = `Bearer ${githubToken}`;
+      }
+
       const res = await fetch("/api/review/submit", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           owner: prDetails.owner,
           repo: prDetails.repo,
@@ -189,20 +250,19 @@ export default function Home() {
           />
         </div>
 
-        {/* PR Quick Links */}
-        <div className="hidden lg:flex items-center gap-2 text-xs">
-          <span className="text-[#8b949e]">Verified PRs:</span>
+        {/* Action Controls & Token Connect */}
+        <div className="flex items-center gap-2.5 text-xs">
           <button
-            onClick={() => handleLoadPR("https://github.com/facebook/react/pull/37895")}
-            className="px-2 py-1 rounded bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] border border-[#30363d] transition-colors"
+            type="button"
+            onClick={() => setIsTokenModalOpen(true)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+              githubToken
+                ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                : "bg-[#21262d] text-[#c9d1d9] border-[#30363d] hover:bg-[#30363d]"
+            }`}
           >
-            react#37895
-          </button>
-          <button
-            onClick={() => handleLoadPR("https://github.com/vercel/next.js/pull/70800")}
-            className="px-2 py-1 rounded bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] border border-[#30363d] transition-colors"
-          >
-            next.js#70800
+            <KeyRound className="w-3.5 h-3.5 text-blue-400" />
+            <span>{githubToken ? "GitHub Token Connected" : "Connect GitHub"}</span>
           </button>
         </div>
       </header>
@@ -252,13 +312,12 @@ export default function Home() {
           {/* Diff Scroll Area */}
           <div className="flex-1 overflow-y-auto p-4">
             {errorMessage ? (
-              <div className="p-6 rounded-lg bg-red-900/20 border border-red-500/40 text-red-300 flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 shrink-0 text-red-400 mt-0.5" />
-                <div>
-                  <h3 className="font-semibold text-sm">Failed to Load Pull Request</h3>
-                  <p className="text-xs mt-1 text-red-200">{errorMessage}</p>
-                </div>
-              </div>
+              <ErrorBoundaryView
+                code={categorizeError(errorMessage)}
+                message={errorMessage}
+                onRetry={() => handleLoadPR(prUrl)}
+                onConnectToken={() => setIsTokenModalOpen(true)}
+              />
             ) : prDetails ? (
               <SplitDiffViewer
                 files={prDetails.files}
@@ -292,10 +351,13 @@ export default function Home() {
           {/* Comments & Degradation Ladder Area */}
           <div className="h-1/2 p-4 pt-2 flex flex-col overflow-hidden">
             {reviewError ? (
-              <div className="flex-1 bg-[#161b22] border border-red-500/40 rounded-xl p-4 flex flex-col items-center justify-center text-center text-red-300">
-                <AlertCircle className="w-8 h-8 text-red-400 mb-2" />
-                <h4 className="font-semibold text-sm">Synthesis Error</h4>
-                <p className="text-xs mt-1 text-red-200 max-w-sm">{reviewError}</p>
+              <div className="flex-1 bg-[#161b22] border border-red-500/40 rounded-xl p-4 overflow-y-auto">
+                <ErrorBoundaryView
+                  code={categorizeError(reviewError)}
+                  message={reviewError}
+                  onRetry={handleGenerateReview}
+                  onConnectToken={() => setIsTokenModalOpen(true)}
+                />
               </div>
             ) : submissionSuccess ? (
               <div className="flex-1 bg-[#161b22] border border-emerald-500/40 rounded-xl p-6 flex flex-col items-center justify-center text-center text-emerald-300 space-y-3">
@@ -371,6 +433,14 @@ export default function Home() {
           </div>
         </div>
       </main>
+
+      {/* GitHub Personal Access Token Modal */}
+      <TokenModal
+        isOpen={isTokenModalOpen}
+        onClose={() => setIsTokenModalOpen(false)}
+        token={githubToken}
+        onSaveToken={handleSaveToken}
+      />
     </div>
   );
 }
