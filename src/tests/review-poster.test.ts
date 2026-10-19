@@ -6,7 +6,7 @@ import {
 import { GroundedReviewComment } from "../lib/types/review";
 
 describe("Phase 4: Review Submission & Self-Approval Prevention", () => {
-  const mockComments: GroundedReviewComment[] = [
+  const testComments: GroundedReviewComment[] = [
     {
       id: "c1",
       path: "src/auth.ts",
@@ -60,12 +60,12 @@ describe("Phase 4: Review Submission & Self-Approval Prevention", () => {
 
   it("formats inline comment body with severity, snapped notice, and suggestion markdown", () => {
     // Comment 1: exact with suggestion
-    const formatted1 = formatGitHubCommentBody(mockComments[0]);
+    const formatted1 = formatGitHubCommentBody(testComments[0]);
     expect(formatted1).toContain("**[BLOCKER]** Token is being leaked here.");
     expect(formatted1).toContain("```suggestion\nconst token = sanitize(raw);\n```");
 
     // Comment 2: snapped with notice
-    const formatted2 = formatGitHubCommentBody(mockComments[1]);
+    const formatted2 = formatGitHubCommentBody(testComments[1]);
     expect(formatted2).toContain("**[WARNING]** Potential division by zero.");
     expect(formatted2).toContain("> ℹ️ *Diff Grounding: Spoken line 18 was snapped to nearest diff line 15*");
   });
@@ -73,7 +73,7 @@ describe("Phase 4: Review Submission & Self-Approval Prevention", () => {
   it("organizes comments into inline, file-level, and review body notes without losing any thought", () => {
     const { finalBody, inlineComments } = prepareReviewPayload(
       "Overall looks solid.",
-      mockComments,
+      testComments,
       false
     );
 
@@ -97,7 +97,7 @@ describe("Phase 4: Review Submission & Self-Approval Prevention", () => {
   it("handles self-approval rule and prepends notice to review body", () => {
     const { finalBody } = prepareReviewPayload(
       "LGTM!",
-      mockComments,
+      testComments,
       true // self-approval degraded
     );
 

@@ -5,7 +5,7 @@ import { parseUnifiedDiff } from "../lib/diff/parser";
 import { LLMReviewResponseSchema } from "../lib/types/review";
 
 describe("Phase 3: Speech-to-Structured-Review Pipeline & Degradation Ladder", () => {
-  const sampleDiff = `diff --git a/compiler/crates/react_compiler_hir/src/globals.rs b/compiler/crates/react_compiler_hir/src/globals.rs
+  const compilerDiff = `diff --git a/compiler/crates/react_compiler_hir/src/globals.rs b/compiler/crates/react_compiler_hir/src/globals.rs
 index a1b2c3d..e5f6a7b 100644
 --- a/compiler/crates/react_compiler_hir/src/globals.rs
 +++ b/compiler/crates/react_compiler_hir/src/globals.rs
@@ -18,7 +18,7 @@ index a1b2c3d..e5f6a7b 100644
      false
  }
 `;
-  const parsedFiles = parseUnifiedDiff(sampleDiff);
+  const parsedFiles = parseUnifiedDiff(compilerDiff);
 
   it("generates compact and accurate legal line range context for LLM prompt", () => {
     const context = formatDiffGroundingContext(parsedFiles);
