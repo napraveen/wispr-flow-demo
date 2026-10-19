@@ -15,7 +15,8 @@ import {
   Mic,
   MessageSquare,
   Sparkles,
-  Loader2
+  Loader2,
+  CheckCircle2
 } from "lucide-react";
 
 export default function Home() {
@@ -101,8 +102,53 @@ export default function Home() {
     setComments((prev) => prev.filter((c) => c.id !== id));
   };
 
+  // Submission state
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionSuccess, setSubmissionSuccess] = useState<{
+    reviewId: number;
+    htmlUrl: string;
+    selfApprovalDegraded: boolean;
+    degradeNotice?: string;
+  } | null>(null);
+
   const handleSubmitReview = async () => {
-    alert("Review submission to GitHub will be executed in Phase 4 after review verification.");
+    if (!prDetails) return;
+
+    setIsSubmitting(true);
+    setReviewError(null);
+
+    try {
+      const res = await fetch("/api/review/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          owner: prDetails.owner,
+          repo: prDetails.repo,
+          pullNumber: prDetails.pullNumber,
+          commitId: prDetails.headSha,
+          body: reviewSummary,
+          event: reviewEvent,
+          comments
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to post review to GitHub.");
+      }
+
+      setSubmissionSuccess({
+        reviewId: data.reviewId,
+        htmlUrl: data.htmlUrl,
+        selfApprovalDegraded: data.selfApprovalDegraded,
+        degradeNotice: data.degradeNotice
+      });
+    } catch (err: any) {
+      console.error("Submission error:", err);
+      setReviewError(err.message || "Failed to post review to GitHub.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Initial load
@@ -251,6 +297,40 @@ export default function Home() {
                 <h4 className="font-semibold text-sm">Synthesis Error</h4>
                 <p className="text-xs mt-1 text-red-200 max-w-sm">{reviewError}</p>
               </div>
+            ) : submissionSuccess ? (
+              <div className="flex-1 bg-[#161b22] border border-emerald-500/40 rounded-xl p-6 flex flex-col items-center justify-center text-center text-emerald-300 space-y-3">
+                <CheckCircle2 className="w-12 h-12 text-emerald-400" />
+                <h4 className="text-base font-bold text-white">Review Successfully Posted to GitHub!</h4>
+                <p className="text-xs text-[#8b949e]">
+                  Review ID: <span className="font-mono text-emerald-400">{submissionSuccess.reviewId}</span>
+                </p>
+
+                {submissionSuccess.selfApprovalDegraded && (
+                  <div className="p-2.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs text-left max-w-sm">
+                    <strong>Notice:</strong> {submissionSuccess.degradeNotice || "GitHub does not permit author self-approval; review posted as a Comment."}
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 pt-2">
+                  <a
+                    href={submissionSuccess.htmlUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow transition-colors"
+                  >
+                    <span>View Review on GitHub</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+
+                  <button
+                    type="button"
+                    onClick={() => setSubmissionSuccess(null)}
+                    className="px-3 py-2 rounded-lg bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] text-xs font-medium border border-[#30363d] transition-colors"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
             ) : comments.length > 0 || reviewSummary ? (
               <div className="flex-1 border border-[#30363d] rounded-xl overflow-hidden flex flex-col">
                 <ReviewSummary
@@ -262,7 +342,7 @@ export default function Home() {
                   onUpdateComment={handleUpdateComment}
                   onDeleteComment={handleDeleteComment}
                   onSubmitReview={handleSubmitReview}
-                  isSubmitting={false}
+                  isSubmitting={isSubmitting}
                   onSelectAnchor={(file, line) => {
                     setSelectedAnchor({ file, line });
                   }}
